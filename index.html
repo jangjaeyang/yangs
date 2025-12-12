@@ -277,6 +277,88 @@
     return arr;
   }
 
+
+  // ================== 이어풀기(세션) 저장 ==================
+  const SESSION_KEY = "oxquiz_session_v1";
+
+  function buildQuestionBank() {
+    const map = {};
+    (questions || []).forEach(q => {
+      if (q && q.question) map[q.question] = q;
+    });
+    return map;
+  }
+
+  function loadSessionRaw() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== "object") return null;
+      return obj;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveSession() {
+    // 진행 중일 때만 저장
+    if (!mode || !currentList.length || currentIndex < 0 || currentIndex >= currentList.length) {
+      localStorage.removeItem(SESSION_KEY);
+      return;
+    }
+    const payload = {
+      mode,
+      index: currentIndex,
+      order: currentList.map(q => q.question),
+      status: statusText ? (statusText.textContent || "") : "",
+      saved_at: new Date().toISOString()
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+  }
+
+  function clearSession() {
+    localStorage.removeItem(SESSION_KEY);
+  }
+
+  function hasInMemorySession(targetMode) {
+    return mode === targetMode && currentList.length > 0 && currentIndex >= 0 && currentIndex < currentList.length;
+  }
+
+  function restoreSession(targetMode) {
+    // 메모리에 이미 있으면 그걸로 쓴다
+    if (hasInMemorySession(targetMode)) return true;
+
+    const s = loadSessionRaw();
+    if (!s || s.mode !== targetMode) return false;
+    if (!questionsLoaded || !questions.length) return false;
+
+    const bank = buildQuestionBank();
+    const list = (s.order || []).map(t => bank[t]).filter(Boolean);
+    if (!list.length) return false;
+
+    mode = targetMode;
+    currentList = list;
+    currentIndex = Math.max(0, Math.min(parseInt(s.index, 10) || 0, currentList.length - 1));
+
+    if (statusText) {
+      if (s.status) statusText.textContent = s.status;
+      else statusText.textContent = (targetMode === "review") ? "최근 7일 오답만 다시 푼다. 제대로 해라." : "";
+    }
+    return true;
+  }
+
+  function hasSavedSession(targetMode) {
+    if (hasInMemorySession(targetMode)) return true;
+    const s = loadSessionRaw();
+    return !!(s && s.mode === targetMode && Array.isArray(s.order) && s.order.length);
+  }
+
+  function updateMainButtons() {
+    if (btnStart) btnStart.textContent = hasSavedSession("normal") ? "문제 이어풀기" : "문제 풀기";
+    if (btnReview) btnReview.textContent = hasSavedSession("review") ? "오답 이어풀기" : "오답 풀기";
+  }
+
   function getTodayStr() {
     const d = new Date();
     const y = d.getFullYear();
@@ -401,6 +483,7 @@
     choicesText.textContent = "";
     // 메인에서는 진행률 숨김
     if (progressLabel) progressLabel.textContent = "";
+    updateMainButtons();
   }
 
   function showQuizScreen() {
@@ -472,10 +555,13 @@
 
   function gotoNextQuestion() {
     currentIndex += 1;
+
     if (currentIndex >= currentList.length) {
+      clearSession();
       alert("더 풀 문제 없다. 메인 화면으로 간다.");
       showMainMenu();
     } else {
+      saveSession();
       statusText.textContent = "";
       showCurrentQuestion();
     }
@@ -491,10 +577,29 @@
       alert("문제가 없다. questions.json부터 채워라.");
       return;
     }
+    // 이어풀기 세션이 있으면 먼저 물어본다
+    if (hasSavedSession("normal")) {
+      const ok = confirm("이전 문제풀이가 남아있다.\n이어서 풀래?\n(취소하면 새로 시작)");
+      if (ok) {
+        if (restoreSession("normal")) {
+          showQuizScreen();
+          showCurrentQuestion();
+          saveSession();
+          return;
+        } else {
+          clearSession();
+        }
+      } else {
+        clearSession();
+        updateMainButtons();
+      }
+    }
+
     mode = "normal";
     currentList = shuffle(questions);
     currentIndex = 0;
     statusText.textContent = "";
+    saveSession();
     showQuizScreen();
     showCurrentQuestion();
   }
@@ -508,6 +613,24 @@
       alert("문제가 없다. questions.json부터 채워라.");
       return;
     }
+    // 이어풀기 세션이 있으면 먼저 물어본다
+    if (hasSavedSession("review")) {
+      const ok = confirm("이전 오답풀이가 남아있다.\n이어서 풀래?\n(취소하면 새로 시작)");
+      if (ok) {
+        if (restoreSession("review")) {
+          showQuizScreen();
+          showCurrentQuestion();
+          saveSession();
+          return;
+        } else {
+          clearSession();
+        }
+      } else {
+        clearSession();
+        updateMainButtons();
+      }
+    }
+
     const wrongList = collectRecentWrongQuestions(questions);
     if (!wrongList.length) {
       alert("최근 7일 동안 틀린 것도 없다.\n잘난 척 좀 해도 되겠네.");
@@ -517,6 +640,7 @@
     currentList = shuffle(wrongList);
     currentIndex = 0;
     statusText.textContent = "최근 7일 오답만 다시 푼다. 제대로 해라.";
+    saveSession();
     showQuizScreen();
     showCurrentQuestion();
   }
@@ -613,13 +737,18 @@
       }
     }
     keysToRemove.forEach(k => localStorage.removeItem(k));
+    clearSession();
+    updateMainButtons();
     alert("기록 싹 다 지워줬다. 다시 처음부터 해라.");
   }
 
   // ================== 이벤트 바인딩 ==================
   btnStart.addEventListener("click", startNormalMode);
   btnReview.addEventListener("click", startReviewMode);
-  btnBack.addEventListener("click", showMainMenu);
+  btnBack.addEventListener("click", () => {
+    saveSession();
+    showMainMenu();
+  });
   btnReset.addEventListener("click", resetAllResults);
 
   btnO.addEventListener("click", () => handleAnswerOX("O"));
@@ -633,8 +762,9 @@
   });
 
   // 페이지 로드 시 문제 파일 먼저 로딩 + 버전 표시 세팅
-  window.addEventListener("load", () => {
-    loadQuestions();
+  window.addEventListener("load", async () => {
+    await loadQuestions();
+    updateMainButtons();
 
     if (versionLabel) {
       const d = new Date(document.lastModified);
