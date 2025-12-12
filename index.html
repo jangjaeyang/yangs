@@ -27,7 +27,7 @@
       padding: 20px;
       border-radius: 10px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      position: relative; /* 버전 표시용 */
+      position: relative; /* 버전/진행 표시용 */
     }
     h1 {
       margin: 0 0 20px;
@@ -127,6 +127,13 @@
       font-size: 11px;
       color: #999;
     }
+    .progress-label {
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      font-size: 12px;
+      color: #555;
+    }
     @media (max-width: 480px) {
       .ox-btn {
         width: 80px;
@@ -181,6 +188,9 @@
       <button class="btn secondary small" id="btn-back">메인 화면으로</button>
     </div>
   </div>
+
+  <!-- 진행률 표시 -->
+  <div id="progress-label" class="progress-label"></div>
 
   <!-- 버전 표시 (JS에서 자동으로 채움) -->
   <div id="version-label" class="version-label"></div>
@@ -377,6 +387,7 @@
   const wrongPopupClose = document.getElementById("wrong-popup-close");
 
   const versionLabel = document.getElementById("version-label");
+  const progressLabel = document.getElementById("progress-label");
 
   let currentList = [];
   let currentIndex = 0;
@@ -388,11 +399,25 @@
     mainMenu.classList.remove("hidden");
     statusText.textContent = "";
     choicesText.textContent = "";
+    // 메인에서는 진행률 숨김
+    if (progressLabel) progressLabel.textContent = "";
   }
 
   function showQuizScreen() {
     mainMenu.classList.add("hidden");
     quizScreen.classList.remove("hidden");
+  }
+
+  // ================== 진행률 표시 ==================
+  function updateProgress() {
+    if (!progressLabel) return;
+    if (!currentList.length || currentIndex < 0 || currentIndex >= currentList.length) {
+      progressLabel.textContent = "";
+      return;
+    }
+    const now = currentIndex + 1;
+    const total = currentList.length;
+    progressLabel.textContent = `${now} / ${total}`;
   }
 
   // ================== 문제 표시 ==================
@@ -402,6 +427,7 @@
       choicesText.textContent = "";
       oxButtons.classList.add("hidden");
       mcButtons.classList.add("hidden");
+      updateProgress();
       return;
     }
     if (currentIndex < 0 || currentIndex >= currentList.length) {
@@ -409,6 +435,7 @@
       choicesText.textContent = "";
       oxButtons.classList.add("hidden");
       mcButtons.classList.add("hidden");
+      updateProgress();
       return;
     }
 
@@ -439,6 +466,8 @@
       mcButtons.classList.add("hidden");
       oxButtons.classList.remove("hidden");
     }
+
+    updateProgress();
   }
 
   function gotoNextQuestion() {
@@ -622,4 +651,3 @@
 </script>
 </body>
 </html>
-
